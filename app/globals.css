@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@layer base {
+  /* Mencegah highlight biru saat elemen diketuk di layar Android/iOS */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Mengunci ukuran font input minimal 16px di seluler agar iOS Safari tidak auto-zoom */
+  @media (max-width: 767px) {
+    input[type="text"],
+    input[type="number"],
+    input[type="email"],
+    input[type="date"],
+    input[type="time"],
+    input[type="datetime-local"],
+    input[type="url"],
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Menghilangkan gaya bawaan peramban iOS/Android pada input tanggal & waktu */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 2.5rem;
+  }
+}
+
+/* Utilitas area aman gesture bar / notch iPhone */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 16px);
+}
