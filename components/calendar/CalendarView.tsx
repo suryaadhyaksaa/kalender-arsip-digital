@@ -205,12 +205,16 @@ export default function CalendarView({
   const handleDeleteEvent = async (id: string, title: string) => {
     if (confirm(`Apakah Anda yakin ingin menghapus acara "${title}"?`)) {
       try {
-        await deleteEvent(id)
-        setEventsList((prev) => prev.filter((item) => item.id !== id))
-        setSelectedDateEvents((prev) => prev?.filter((item) => item.id !== id) || null)
-        router.refresh()
+        const res = await deleteEvent(id)
+        if (res && res.success === false) {
+          alert('Gagal menghapus acara: ' + res.error)
+        } else {
+          setEventsList((prev) => prev.filter((item) => item.id !== id))
+          setSelectedDateEvents((prev) => prev?.filter((item) => item.id !== id) || null)
+          router.refresh()
+        }
       } catch (err: any) {
-        alert('Gagal menghapus acara: ' + err.message)
+        alert('Gagal menghapus acara: ' + (err?.message || 'Terjadi kesalahan.'))
       }
     }
   }
@@ -225,16 +229,22 @@ export default function CalendarView({
     formData.set('start_date', `${dateVal}T${timeVal}`)
 
     try {
+      let res: any
       if (editingEvent) {
-        await updateEvent(editingEvent.id, formData)
+        res = await updateEvent(editingEvent.id, formData)
       } else {
-        await createEvent(formData)
+        res = await createEvent(formData)
       }
-      setIsFormModalOpen(false)
-      setSelectedDateEvents(null)
-      router.refresh()
+
+      if (res && res.success === false) {
+        alert('Gagal menyimpan acara: ' + res.error)
+      } else {
+        setIsFormModalOpen(false)
+        setSelectedDateEvents(null)
+        router.refresh()
+      }
     } catch (err: any) {
-      alert('Gagal menyimpan acara: ' + err.message)
+      alert('Gagal menyimpan acara: ' + (err?.message || 'Terjadi kesalahan.'))
     } finally {
       setFormLoading(false)
     }
@@ -246,12 +256,16 @@ export default function CalendarView({
     const formData = new FormData(e.currentTarget)
 
     try {
-      await quickUploadDocument(formData)
-      alert('Dokumen berhasil diunggah!')
-      setQuickUploadEventId(null)
-      router.refresh()
+      const res = await quickUploadDocument(formData)
+      if (res && res.success === false) {
+        alert('Gagal mengunggah dokumen: ' + res.error)
+      } else {
+        alert('Dokumen berhasil diunggah!')
+        setQuickUploadEventId(null)
+        router.refresh()
+      }
     } catch (err: any) {
-      alert('Gagal mengunggah dokumen: ' + err.message)
+      alert('Gagal mengunggah dokumen: ' + (err?.message || 'Terjadi kesalahan.'))
     } finally {
       setFormLoading(false)
     }
@@ -482,14 +496,12 @@ export default function CalendarView({
         </button>
       )}
 
-      {/* MODAL RINCIAN ACARA HARIAN (TAMPILAN RAPI & MODERN) */}
+      {/* MODAL RINCIAN ACARA HARIAN */}
       {selectedDateEvents && (
         <div className="fixed inset-0 bg-[#022c22]/75 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-[#FFFDF9] rounded-t-3xl sm:rounded-2xl border border-[#EFE8DC] max-w-lg w-full p-5 sm:p-6 shadow-2xl max-h-[85dvh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
-            {/* DRAG HANDLE UNTUK HP */}
             <div className="w-12 h-1.5 bg-[#EFE8DC] rounded-full mx-auto sm:hidden -mt-1 mb-2 shrink-0"></div>
 
-            {/* HEADER MODAL DETAIL */}
             <div className="flex justify-between items-start border-b border-[#EFE8DC] pb-3.5 shrink-0">
               <div>
                 <div className="flex items-center space-x-2">
@@ -507,7 +519,6 @@ export default function CalendarView({
               </button>
             </div>
 
-            {/* ISI LIST / EMPTY STATE */}
             <div className="flex-1 overflow-y-auto py-3.5 pr-1 space-y-3">
               {selectedDateEvents.length > 0 ? (
                 selectedDateEvents.map((e) => (
@@ -659,7 +670,6 @@ export default function CalendarView({
                   </div>
                 ))
               ) : (
-                /* WADAH EMPTY STATE RAPI & TERSTRUKTUR */
                 <div className="text-center py-8 px-4 my-1 bg-[#FAF7F2] rounded-2xl border border-dashed border-[#E0D2C0] space-y-3">
                   <div className="w-12 h-12 bg-[#FAF5EC] border border-[#E0D2C0] rounded-2xl flex items-center justify-center mx-auto text-emerald-800 shadow-2xs">
                     <FileText className="w-6 h-6" />
@@ -672,7 +682,6 @@ export default function CalendarView({
               )}
             </div>
 
-            {/* FOOTER ACTION BUTTONS RAPI SIMETRIS */}
             <div className="shrink-0 pt-3.5 border-t border-[#EFE8DC] flex flex-col-reverse sm:flex-row items-center justify-end gap-2 bg-[#FFFDF9] pb-safe">
               <button
                 type="button"
