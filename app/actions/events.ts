@@ -3,85 +3,27 @@
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-function ensureWIBOffset(dateStr: string) {
-  if (!dateStr) return dateStr
-  if (!dateStr.includes('+') && !dateStr.endsWith('Z')) {
-    const hasSeconds = dateStr.split('T')[1]?.split(':').length === 3
-    return `${dateStr}${hasSeconds ? '' : ':00'}+07:00`
-  }
-  return dateStr
-}
-
-async function handleFileUploads(
-  supabase: any,
-  eventId: string,
-  eventTitle: string,
-  formData: FormData
-) {
-  let files = formData.getAll('files') as File[]
-  let docTypes = formData.getAll('doc_types') as string[]
-
-  const singleFile = formData.get('file') as File | null
-  const singleDocType = formData.get('doc_type') as string | null
-
-  if ((!files || files.length === 0 || (files.length === 1 && files[0].size === 0)) && singleFile && singleFile.size > 0) {
-    files = [singleFile]
-    docTypes = [singleDocType || 'lpj_kegiatan']
-  }
-
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i]
-    const docType = docTypes[i] || docTypes[0] || 'lpj_kegiatan'
-
-    if (file && file.size > 0) {
-      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'pdf'
-      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_')
-      const filePath = `${eventId}/${Date.now()}_${i}_${sanitizedFileName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true })
-
-      if (uploadError) {
-        throw new Error(`Gagal unggah file "${file.name}": ${uploadError.message}`)
-      }
-
-      const formattedDocTypeLabel = docType.replace(/_/g, ' ').toUpperCase()
-
-      const { error: docError } = await (supabase.from('documents') as any).insert({
-        event_id: eventId,
-        title: `${eventTitle} - ${formattedDocTypeLabel}`,
-        doc_type: docType,
-        file_type: fileExt,
-        file_path: filePath,
-        file_size: file.size,
-        is_public: true,
-      })
-
-      if (docError) {
-        throw new Error(`Gagal menyimpan data arsip dokumen "${file.name}": ${docError.message}`)
-      }
-    }
-  }
+// Sanitasi nama file agar aman dari karakter khusus/spasi
+function sanitizeFilename(filename: string) {
+  return filename.replace(/[^a-zA-Z0-9.-]/g, '_')
 }
 
 export async function createEvent(formData: FormData) {
   const supabase = await createClient()
 
+  // 1. Ambil data formulir utama
   const title = formData.get('title') as string
-  const category_id = formData.get('category_id') as string
-  
-  const raw_start_date = formData.get('start_date') as string
-  const start_date = ensureWIBOffset(raw_start_date)
-  
-  const raw_end_date = (formData.get('end_date') as string) || raw_start_date
-  const end_date = ensureWIBOffset(raw_end_date)
-
+  const category_id = (formData.get('category_id') as string) || null
+  const status = (formData.get('status') as string) || 'published'
+  const start_date = formData.get('start_date') as string
   const location = formData.get('location') as string
   const pic_name = formData.get('pic_name') as string
-  const description = formData.get('description') as string
   const meeting_link = (formData.get('meeting_link') as string) || null
-  const status = (formData.get('status') as string) || 'published'
+  const description = (formData.get('description') as string) || null
+
+  if (!title || !start_date || !location || !pic_name) {
+    throw new Error('Harap isi semua kolom wajib (*)')
+  }
 
   const slug =
     title
@@ -91,107 +33,251 @@ export async function createEvent(formData: FormData) {
     '-' +
     Date.now().toString().slice(-4)
 
-  const payload = {
-    title,
-    slug,
-    category_id: category_id || null,
-    start_date,
-    end_date,
-    location,
-    pic_name,
-    description,
-    meeting_link,
-    status,
-  }
-
-  const { data: newEvent, error } = await (supabase.from('events') as any)
-    .insert(payload)
+  // 2. Simpan data acara ke tabel events
+  const { data: event, error: eventError } = await (supabase.from('events') as any)
+    .insert([
+      {
+        title,
+        slug,
+        category_id,
+        status,
+        start_date,
+        location,
+        pic_name,
+        meeting_link,
+        description,
+      },
+    ])
     .select()
     .single()
 
-  if (error) throw new Error('Gagal membuat acara: ' + error.message)
+  if (eventError || !event) {
+    throw new Error(`Gagal membuat acara: ${eventError?.message}`)
+  }
 
-  if (newEvent) {
-    await handleFileUploads(supabase, newEvent.id, title, formData)
+  // 3. Proses upload multiple files
+  const files = formData.getAll('files') as File[]
+  const docTypes = formData.getAll('doc_types') as string[]
+
+  if (files && files.length > 0) {
+    let totalSize = 0
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const docType = docTypes[i] || 'lpj_kegiatan'
+
+      // Lewati input file kosong
+      if (!file || !(file instanceof File) || file.size === 0 || !file.name) {
+        continue
+      }
+
+      totalSize += file.size
+
+      // Peringatan jika total ukuran berkas melebihi batas aman Vercel (4 MB)
+      if (totalSize > 4 * 1024 * 1024) {
+        throw new Error(
+          'Total ukuran berkas gabungan melebihi batas aman (4 MB). Harap unggah berkas satu per satu.'
+        )
+      }
+
+      const fileExt = file.name.split('.').pop()
+      const rawName = file.name.substring(0, file.name.lastIndexOf('.'))
+      const cleanName = sanitizeFilename(rawName)
+      const fileName = `${Date.now()}_${cleanName}.${fileExt}`
+      const filePath = `documents/${(event as any).id}/${fileName}`
+
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = new Uint8Array(arrayBuffer)
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(filePath, buffer, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: true,
+        })
+
+      if (uploadError) {
+        console.error('Storage Upload Error:', uploadError)
+        throw new Error(`Gagal mengunggah file "${file.name}": ${uploadError.message}`)
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('documents')
+        .getPublicUrl(filePath)
+
+      const { error: docError } = await (supabase.from('documents') as any).insert([
+        {
+          event_id: (event as any).id,
+          title: file.name,
+          file_path: publicUrlData.publicUrl,
+          doc_type: docType,
+          file_size: file.size,
+        },
+      ])
+
+      if (docError) {
+        console.error('Doc DB Error:', docError)
+      }
+    }
   }
 
   revalidatePath('/kalender')
-  revalidatePath('/')
   revalidatePath('/arsip')
+  return { success: true, eventId: (event as any).id }
 }
 
 export async function updateEvent(id: string, formData: FormData) {
   const supabase = await createClient()
 
   const title = formData.get('title') as string
-  const category_id = formData.get('category_id') as string
-  
-  const raw_start_date = formData.get('start_date') as string
-  const start_date = ensureWIBOffset(raw_start_date)
-  
-  const raw_end_date = (formData.get('end_date') as string) || raw_start_date
-  const end_date = ensureWIBOffset(raw_end_date)
-
+  const category_id = (formData.get('category_id') as string) || null
+  const status = (formData.get('status') as string) || 'published'
+  const start_date = formData.get('start_date') as string
   const location = formData.get('location') as string
   const pic_name = formData.get('pic_name') as string
-  const description = formData.get('description') as string
   const meeting_link = (formData.get('meeting_link') as string) || null
-  const status = (formData.get('status') as string) || 'published'
+  const description = (formData.get('description') as string) || null
 
-  const payload = {
-    title,
-    category_id: category_id || null,
-    start_date,
-    end_date,
-    location,
-    pic_name,
-    description,
-    meeting_link,
-    status,
-    updated_at: new Date().toISOString(),
-  }
-
-  const { error } = await (supabase.from('events') as any)
-    .update(payload)
+  const { error: eventError } = await (supabase.from('events') as any)
+    .update({
+      title,
+      category_id,
+      status,
+      start_date,
+      location,
+      pic_name,
+      meeting_link,
+      description,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
 
-  if (error) throw new Error('Gagal memperbarui acara: ' + error.message)
+  if (eventError) {
+    throw new Error(`Gagal memperbarui acara: ${eventError.message}`)
+  }
 
-  await handleFileUploads(supabase, id, title, formData)
+  const files = formData.getAll('files') as File[]
+  const docTypes = formData.getAll('doc_types') as string[]
+
+  if (files && files.length > 0) {
+    let totalSize = 0
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const docType = docTypes[i] || 'lpj_kegiatan'
+
+      if (!file || !(file instanceof File) || file.size === 0 || !file.name) {
+        continue
+      }
+
+      totalSize += file.size
+      if (totalSize > 4 * 1024 * 1024) {
+        throw new Error(
+          'Total ukuran berkas gabungan melebihi batas aman (4 MB). Harap unggah berkas satu per satu.'
+        )
+      }
+
+      const fileExt = file.name.split('.').pop()
+      const rawName = file.name.substring(0, file.name.lastIndexOf('.'))
+      const cleanName = sanitizeFilename(rawName)
+      const fileName = `${Date.now()}_${cleanName}.${fileExt}`
+      const filePath = `documents/${id}/${fileName}`
+
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = new Uint8Array(arrayBuffer)
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(filePath, buffer, {
+          contentType: file.type || 'application/octet-stream',
+          upsert: true,
+        })
+
+      if (uploadError) {
+        throw new Error(`Gagal mengunggah "${file.name}": ${uploadError.message}`)
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('documents')
+        .getPublicUrl(filePath)
+
+      await (supabase.from('documents') as any).insert([
+        {
+          event_id: id,
+          title: file.name,
+          file_path: publicUrlData.publicUrl,
+          doc_type: docType,
+          file_size: file.size,
+        },
+      ])
+    }
+  }
 
   revalidatePath('/kalender')
-  revalidatePath('/')
   revalidatePath('/arsip')
+  return { success: true }
+}
+
+export async function deleteEvent(id: string) {
+  const supabase = await createClient()
+  const { error } = await (supabase.from('events') as any).delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/kalender')
+  revalidatePath('/arsip')
+  return { success: true }
 }
 
 export async function quickUploadDocument(formData: FormData) {
   const supabase = await createClient()
   const event_id = formData.get('event_id') as string
+  const doc_type = (formData.get('doc_types') as string) || 'lpj_kegiatan'
+  const file = formData.get('files') as File
 
-  if (!event_id) throw new Error('ID Kegiatan tidak ditemukan.')
+  if (!event_id || !file || file.size === 0) {
+    throw new Error('Berkas tidak boleh kosong.')
+  }
 
-  const { data: eventData } = await (supabase.from('events') as any)
-    .select('title')
-    .eq('id', event_id)
-    .single()
+  if (file.size > 4 * 1024 * 1024) {
+    throw new Error('Ukuran berkas melebihi batas 4 MB.')
+  }
 
-  const eventTitle = eventData?.title || 'Kegiatan'
-  await handleFileUploads(supabase, event_id, eventTitle, formData)
+  const fileExt = file.name.split('.').pop()
+  const rawName = file.name.substring(0, file.name.lastIndexOf('.'))
+  const cleanName = sanitizeFilename(rawName)
+  const fileName = `${Date.now()}_${cleanName}.${fileExt}`
+  const filePath = `documents/${event_id}/${fileName}`
+
+  const arrayBuffer = await file.arrayBuffer()
+  const buffer = new Uint8Array(arrayBuffer)
+
+  const { error: uploadError } = await supabase.storage
+    .from('documents')
+    .upload(filePath, buffer, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: true,
+    })
+
+  if (uploadError) {
+    throw new Error(`Gagal mengunggah berkas: ${uploadError.message}`)
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from('documents')
+    .getPublicUrl(filePath)
+
+  const { error: docError } = await (supabase.from('documents') as any).insert([
+    {
+      event_id,
+      title: file.name,
+      file_path: publicUrlData.publicUrl,
+      doc_type,
+      file_size: file.size,
+    },
+  ])
+
+  if (docError) throw new Error(docError.message)
 
   revalidatePath('/kalender')
-  revalidatePath('/')
   revalidatePath('/arsip')
-}
-
-export async function deleteEvent(id: string) {
-  const supabase = await createClient()
-
-  await (supabase.from('documents') as any).delete().eq('event_id', id)
-  const { error } = await (supabase.from('events') as any).delete().eq('id', id)
-
-  if (error) throw new Error('Gagal menghapus acara: ' + error.message)
-
-  revalidatePath('/kalender')
-  revalidatePath('/')
-  revalidatePath('/arsip')
+  return { success: true }
 }
