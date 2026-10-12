@@ -227,7 +227,6 @@ export default function CalendarView({
 
     const formElement = e.currentTarget
 
-    // 1. Ekstrak input berkas secara manual dari DOM sebelum pengiriman
     const fileInputs = formElement.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>
     const docTypeSelects = formElement.querySelectorAll('select[name="doc_types"]') as NodeListOf<HTMLSelectElement>
 
@@ -241,13 +240,10 @@ export default function CalendarView({
       }
     })
 
-    // 2. Cabut nama atribut file input sementara agar TIDAK terikut di payload createEvent
     fileInputs.forEach((input) => input.removeAttribute('name'))
 
-    // 3. Buat FormData ringkas murni data teks acara
     const metaFormData = new FormData(formElement)
 
-    // Kembalikan nama atribut agar elemen form UI tidak rusak
     fileInputs.forEach((input) => input.setAttribute('name', 'files'))
 
     const dateVal = metaFormData.get('event_date') as string
@@ -274,7 +270,6 @@ export default function CalendarView({
         return
       }
 
-      // 4. Unggah setiap berkas secara mandiri melalui request terpisah
       if (validFilesToUpload.length > 0 && eventId) {
         for (let i = 0; i < validFilesToUpload.length; i++) {
           const { file, docType } = validFilesToUpload[i]
@@ -941,7 +936,7 @@ export default function CalendarView({
                   </button>
                 </div>
 
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {attachmentRows.map((row, idx) => (
                     <div
                       key={row.id}
@@ -979,12 +974,116 @@ export default function CalendarView({
                         </div>
                       </div>
 
-                      <input
-                        type="file"
-                        name="files"
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                        className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#FAF5EC] file:text-[#022c22] file:border file:border-[#E0D2C0] hover:file:bg-[#F0E6D8] border border-[#EFE8DC] rounded-lg p-1 bg-[#FFFDF9] cursor-pointer"
-                      />
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input
+                          type="file"
+                          name="files"
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+                          className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#FAF5EC] file:text-[#022c22] file:border file:border-[#E0D2C0] hover:file:bg-[#F0E6D8] border border-[#EFE8DC] rounded-lg p-1 bg-[#FFFDF9] cursor-pointer"
+                        />
+
+                        {/* Tombol Upload Mandiri Per Baris File */}
+                        <button
+                          type="button"
+                          onClick={async (evt) => {
+                            const parent = (evt.currentTarget as HTMLElement).closest('.space-y-2')
+                            const fileInput = parent?.querySelector('input[type="file"]') as HTMLInputElement
+                            const docSelect = parent?.querySelector('select[name="doc_types"]') as HTMLSelectElement
+
+                            if (!fileInput?.files || !fileInput.files[0]) {
+                              alert('Harap pilih berkas terlebih dahulu!')
+                              return
+                            }
+
+                            const file = fileInput.files[0]
+                            setFormLoading(true)
+
+                            try {
+                              let currentEventId = editingEvent?.id
+
+                              // Jika belum pernah disimpan (Tambah Acara Baru), buat acara ke database dulu
+                              if (!currentEventId) {
+                                const formElement = fileInput.closest('form') as HTMLFormElement
+                                if (!formElement) return
+
+                                const title = (formElement.querySelector('input[name="title"]') as HTMLInputElement)?.value
+                                const dateVal = (formElement.querySelector('input[name="event_date"]') as HTMLInputElement)?.value
+                                const timeVal = (formElement.querySelector('input[name="event_time"]') as HTMLInputElement)?.value
+                                const location = (formElement.querySelector('input[name="location"]') as HTMLInputElement)?.value
+                                const pic = (formElement.querySelector('input[name="pic_name"]') as HTMLInputElement)?.value
+
+                                if (!title || !dateVal || !location || !pic) {
+                                  alert('Harap lengkapi kolom wajib (*) (Judul, Tanggal, Lokasi, PIC) terlebih dahulu sebelum mengunggah berkas!')
+                                  setFormLoading(false)
+                                  return
+                                }
+
+                                setLoadingText('Menyimpan data acara...')
+                                const fileInputs = formElement.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>
+                                fileInputs.forEach((input) => input.removeAttribute('name'))
+
+                                const cleanFormData = new FormData(formElement)
+                                fileInputs.forEach((input) => input.setAttribute('name', 'files'))
+                                cleanFormData.set('start_date', `${dateVal}T${timeVal || '08:00'}`)
+
+                                const createRes = await createEvent(cleanFormData)
+                                if (createRes && createRes.success === false) {
+                                  alert('Gagal membuat acara: ' + createRes.error)
+                                  setFormLoading(false)
+                                  return
+                                }
+
+                                if (!createRes || !createRes.eventId) {
+                                  alert('Gagal membuat acara: ID acara tidak ditemukan.')
+                                  setFormLoading(false)
+                                  return
+                                }
+
+                                const newEventId: string = createRes.eventId
+                                currentEventId = newEventId
+
+                                setEditingEvent({
+                                  id: newEventId,
+                                  title,
+                                  slug: '',
+                                  start_date: `${dateVal}T${timeVal || '08:00'}`,
+                                  status: 'published',
+                                })
+                              }
+
+                              if (!currentEventId) {
+                                setFormLoading(false)
+                                return
+                              }
+
+                              setLoadingText(`Mengunggah "${file.name}"...`)
+                              const singleFormData = new FormData()
+                              singleFormData.set('event_id', currentEventId)
+                              singleFormData.set('doc_types', docSelect?.value || 'lpj_kegiatan')
+                              singleFormData.set('files', file)
+
+                              const uploadRes = await quickUploadDocument(singleFormData)
+                              if (uploadRes && uploadRes.success === false) {
+                                alert('Gagal mengunggah berkas: ' + uploadRes.error)
+                              } else {
+                                alert(`Berkas "${file.name}" berhasil diunggah!`)
+                                fileInput.value = ''
+                                router.refresh()
+                              }
+                            } catch (err: any) {
+                              alert('Gagal mengunggah berkas: ' + (err?.message || 'Terjadi kesalahan.'))
+                            } finally {
+                              setFormLoading(false)
+                              setLoadingText('')
+                            }
+                          }}
+                          disabled={formLoading}
+                          className="px-3.5 py-2 bg-[#FAF5EC] hover:bg-[#F0E6D8] border border-[#E0D2C0] text-[#022c22] text-xs font-extrabold rounded-lg shrink-0 flex items-center justify-center space-x-1.5 transition shadow-2xs active:scale-95 disabled:opacity-50"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-emerald-800" />
+                          <span>Upload</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
