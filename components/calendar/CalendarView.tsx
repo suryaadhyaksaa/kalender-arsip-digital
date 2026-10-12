@@ -116,6 +116,7 @@ export default function CalendarView({
   const [isFormModalOpen, setIsFormModalOpen] = useState(false)
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null)
   const [formLoading, setFormLoading] = useState(false)
+  const [loadingText, setLoadingText] = useState<string>('')
   
   const [prefilledDateOnly, setPrefilledDateOnly] = useState('')
   const [prefilledTimeOnly, setPrefilledTimeOnly] = useState('08:00')
@@ -222,37 +223,91 @@ export default function CalendarView({
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setFormLoading(true)
-    const formData = new FormData(e.currentTarget)
+    setLoadingText('Menyimpan data acara...')
 
-    const dateVal = formData.get('event_date') as string
-    const timeVal = formData.get('event_time') as string
-    formData.set('start_date', `${dateVal}T${timeVal}`)
+    const formElement = e.currentTarget
+
+    // 1. Ekstrak input berkas secara manual dari DOM sebelum pengiriman
+    const fileInputs = formElement.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>
+    const docTypeSelects = formElement.querySelectorAll('select[name="doc_types"]') as NodeListOf<HTMLSelectElement>
+
+    const validFilesToUpload: Array<{ file: File; docType: string }> = []
+    fileInputs.forEach((input, index) => {
+      if (input.files && input.files[0]) {
+        validFilesToUpload.push({
+          file: input.files[0],
+          docType: docTypeSelects[index]?.value || 'lpj_kegiatan',
+        })
+      }
+    })
+
+    // 2. Cabut nama atribut file input sementara agar TIDAK terikut di payload createEvent
+    fileInputs.forEach((input) => input.removeAttribute('name'))
+
+    // 3. Buat FormData ringkas murni data teks acara
+    const metaFormData = new FormData(formElement)
+
+    // Kembalikan nama atribut agar elemen form UI tidak rusak
+    fileInputs.forEach((input) => input.setAttribute('name', 'files'))
+
+    const dateVal = metaFormData.get('event_date') as string
+    const timeVal = metaFormData.get('event_time') as string
+    metaFormData.set('start_date', `${dateVal}T${timeVal}`)
 
     try {
       let res: any
+      let eventId = editingEvent?.id
+
       if (editingEvent) {
-        res = await updateEvent(editingEvent.id, formData)
+        res = await updateEvent(editingEvent.id, metaFormData)
       } else {
-        res = await createEvent(formData)
+        res = await createEvent(metaFormData)
+        if (res && res.eventId) {
+          eventId = res.eventId
+        }
       }
 
       if (res && res.success === false) {
         alert('Gagal menyimpan acara: ' + res.error)
-      } else {
-        setIsFormModalOpen(false)
-        setSelectedDateEvents(null)
-        router.refresh()
+        setFormLoading(false)
+        setLoadingText('')
+        return
       }
+
+      // 4. Unggah setiap berkas secara mandiri melalui request terpisah
+      if (validFilesToUpload.length > 0 && eventId) {
+        for (let i = 0; i < validFilesToUpload.length; i++) {
+          const { file, docType } = validFilesToUpload[i]
+          setLoadingText(`Mengunggah berkas ${i + 1} dari ${validFilesToUpload.length}...`)
+
+          const singleFileFormData = new FormData()
+          singleFileFormData.set('event_id', eventId)
+          singleFileFormData.set('doc_types', docType)
+          singleFileFormData.set('files', file)
+
+          const uploadRes = await quickUploadDocument(singleFileFormData)
+
+          if (uploadRes && uploadRes.success === false) {
+            alert(`Acara tersimpan, tetapi gagal mengunggah berkas "${file.name}": ${uploadRes.error}`)
+          }
+        }
+      }
+
+      setIsFormModalOpen(false)
+      setSelectedDateEvents(null)
+      router.refresh()
     } catch (err: any) {
       alert('Gagal menyimpan acara: ' + (err?.message || 'Terjadi kesalahan.'))
     } finally {
       setFormLoading(false)
+      setLoadingText('')
     }
   }
 
   const handleQuickUploadSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setFormLoading(true)
+    setLoadingText('Mengunggah dokumen...')
     const formData = new FormData(e.currentTarget)
 
     try {
@@ -268,6 +323,7 @@ export default function CalendarView({
       alert('Gagal mengunggah dokumen: ' + (err?.message || 'Terjadi kesalahan.'))
     } finally {
       setFormLoading(false)
+      setLoadingText('')
     }
   }
 
@@ -663,7 +719,7 @@ export default function CalendarView({
                           className="w-full py-2.5 bg-[#FAF5EC] hover:bg-[#F0E6D8] border border-[#E0D2C0] text-[#022c22] font-extrabold text-xs rounded-lg transition shadow-2xs flex items-center justify-center space-x-1"
                         >
                           <Upload className="w-3.5 h-3.5 text-emerald-800" />
-                          <span>{formLoading ? 'Mengunggah...' : 'Upload Dokumen Ini'}</span>
+                          <span>{formLoading ? (loadingText || 'Mengunggah...') : 'Upload Dokumen Ini'}</span>
                         </button>
                       </form>
                     )}
@@ -927,7 +983,7 @@ export default function CalendarView({
                         type="file"
                         name="files"
                         accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                        className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#FAF5EC] file:text-[#022c22] file:border file:border-[#E0D2C0] hover:file:bg-[#F0E6D8] border border-[#EFE8DC] rounded-lg p-1 bg-white cursor-pointer"
+                        className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#FAF5EC] file:text-[#022c22] file:border file:border-[#E0D2C0] hover:file:bg-[#F0E6D8] border border-[#EFE8DC] rounded-lg p-1 bg-[#FFFDF9] cursor-pointer"
                       />
                     </div>
                   ))}
@@ -949,7 +1005,7 @@ export default function CalendarView({
                 className="px-6 py-2.5 text-xs font-extrabold text-[#022c22] bg-[#FAF5EC] hover:bg-[#F0E6D8] border border-[#E0D2C0] active:scale-[0.98] rounded-xl transition flex items-center space-x-2 shadow-xs"
               >
                 {formLoading ? (
-                  <span>Menyimpan...</span>
+                  <span>{loadingText || 'Menyimpan...'}</span>
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4 text-emerald-800" />
