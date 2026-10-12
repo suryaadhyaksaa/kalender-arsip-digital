@@ -81,7 +81,7 @@ export async function createEvent(formData: FormData) {
           }
         }
 
-        const fileExt = file.name.split('.').pop()
+        const fileExt = file.name.split('.').pop() || ''
         const rawName = file.name.substring(0, file.name.lastIndexOf('.'))
         const cleanName = sanitizeFilename(rawName)
         const fileName = `${Date.now()}_${cleanName}.${fileExt}`
@@ -115,6 +115,7 @@ export async function createEvent(formData: FormData) {
             file_path: publicUrlData.publicUrl,
             doc_type: docType,
             file_size: file.size,
+            file_type: file.type || fileExt || 'application/octet-stream',
           },
         ])
 
@@ -185,7 +186,7 @@ export async function updateEvent(id: string, formData: FormData) {
           }
         }
 
-        const fileExt = file.name.split('.').pop()
+        const fileExt = file.name.split('.').pop() || ''
         const rawName = file.name.substring(0, file.name.lastIndexOf('.'))
         const cleanName = sanitizeFilename(rawName)
         const fileName = `${Date.now()}_${cleanName}.${fileExt}`
@@ -219,6 +220,7 @@ export async function updateEvent(id: string, formData: FormData) {
             file_path: publicUrlData.publicUrl,
             doc_type: docType,
             file_size: file.size,
+            file_type: file.type || fileExt || 'application/octet-stream',
           },
         ])
       }
@@ -252,15 +254,15 @@ export async function quickUploadDocument(formData: FormData) {
     const doc_type = (formData.get('doc_types') as string) || 'lpj_kegiatan'
     const file = formData.get('files') as File
 
-    if (!event_id || !file || file.size === 0) {
-      return { success: false, error: 'Berkas tidak boleh kosong.' }
+    if (!event_id || !file || !(file instanceof File) || file.size === 0) {
+      return { success: false, error: 'Berkas tidak valid atau kosong.' }
     }
 
-    if (file.size > 4 * 1024 * 1024) {
-      return { success: false, error: 'Ukuran berkas melebihi batas 4 MB.' }
+    if (file.size > 4.5 * 1024 * 1024) {
+      return { success: false, error: `Ukuran berkas "${file.name}" melebihi batas 4.5 MB.` }
     }
 
-    const fileExt = file.name.split('.').pop()
+    const fileExt = file.name.split('.').pop() || ''
     const rawName = file.name.substring(0, file.name.lastIndexOf('.'))
     const cleanName = sanitizeFilename(rawName)
     const fileName = `${Date.now()}_${cleanName}.${fileExt}`
@@ -291,6 +293,7 @@ export async function quickUploadDocument(formData: FormData) {
         file_path: publicUrlData.publicUrl,
         doc_type,
         file_size: file.size,
+        file_type: file.type || fileExt || 'application/octet-stream',
       },
     ])
 
