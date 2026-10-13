@@ -2,24 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const fileUrl = searchParams.get('url')
+  const rawUrl = searchParams.get('url')
   const fileName = searchParams.get('name') || 'dokumen'
 
-  if (!fileUrl) {
+  if (!rawUrl) {
     return new NextResponse('URL berkas tidak ditemukan', { status: 400 })
   }
 
   try {
-    // Sanitasi URL jika terdapat penumpukan skema http/https
-    let targetUrl = fileUrl
-    if (targetUrl.includes('http')) {
-      const lastHttpIndex = targetUrl.lastIndexOf('http')
-      if (lastHttpIndex > 0) {
-        targetUrl = targetUrl.substring(lastHttpIndex)
-      }
-    }
+    // Hapus seluruh tumpukan domain/prefix Supabase berulang hingga bersih
+    const cleanPath = rawUrl
+      .replace(/https?:\/\/[^\/]+\/storage\/v1\/object\/public\/documents\//g, '')
+      .replace(/^documents\//, '')
+      .replace(/^\/+/, '')
 
-    // Ambil berkas dari Supabase Storage
+    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mqskoxyssqogjxdzqgkk.supabase.co'
+    const targetUrl = `${baseUrl.replace(/\/$/, '')}/storage/v1/object/public/documents/${cleanPath}`
+
     const response = await fetch(targetUrl)
     if (!response.ok) {
       return new NextResponse('Gagal mengambil berkas dari server', { status: response.status })
@@ -27,9 +26,8 @@ export async function GET(request: NextRequest) {
 
     const blob = await response.blob()
     const headers = new Headers()
-    
+
     headers.set('Content-Type', response.headers.get('content-type') || 'application/octet-stream')
-    // Header wajib untuk memaksa browser langsung mengunduh berkas
     headers.set(
       'Content-Disposition',
       `attachment; filename="${encodeURIComponent(fileName)}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
