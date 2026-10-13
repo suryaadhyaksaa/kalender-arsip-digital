@@ -45,13 +45,11 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
-// Fungsi pembantu untuk membersihkan & memastikan URL unduhan valid
-function getDownloadUrl(filePath: string) {
-  if (!filePath) return '#'
+// Fungsi pembantu untuk membersihkan & mendapatkan URL publik berkas
+function getCleanPublicUrl(filePath: string) {
+  if (!filePath) return ''
   
-  // Jika path sudah berupa URL HTTP/HTTPS lengkap
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-    // Tangani jika ada penumpukan string 'http' berganda
     const lastHttpIndex = filePath.lastIndexOf('http')
     if (lastHttpIndex > 0) {
       return filePath.substring(lastHttpIndex)
@@ -59,7 +57,6 @@ function getDownloadUrl(filePath: string) {
     return filePath
   }
 
-  // Jika path berupa relative path
   const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const cleanPath = filePath.replace(/^documents\//, '')
   return `${baseUrl}/storage/v1/object/public/documents/${cleanPath}`
@@ -172,7 +169,8 @@ export default async function AgendaDetailPage({ params }: Props) {
           {event.documents && event.documents.length > 0 ? (
             <div className="space-y-2">
               {event.documents.map((doc) => {
-                const downloadUrl = getDownloadUrl(doc.file_path)
+                const targetPublicUrl = getCleanPublicUrl(doc.file_path)
+                const downloadProxyUrl = `/api/download?url=${encodeURIComponent(targetPublicUrl)}&name=${encodeURIComponent(doc.title)}`
 
                 return (
                   <div
@@ -192,10 +190,7 @@ export default async function AgendaDetailPage({ params }: Props) {
                     </div>
 
                     <a
-                      href={downloadUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      download
+                      href={downloadProxyUrl}
                       className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition shrink-0 ml-2"
                     >
                       <Download className="w-3.5 h-3.5" />
