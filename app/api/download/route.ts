@@ -10,15 +10,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Hapus seluruh tumpukan domain/prefix Supabase berulang hingga bersih
-    const cleanPath = rawUrl
-      .replace(/https?:\/\/[^\/]+\/storage\/v1\/object\/public\/documents\//g, '')
-      .replace(/^documents\//, '')
-      .replace(/^\/+/, '')
+    let targetUrl = rawUrl
 
-    const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mqskoxyssqogjxdzqgkk.supabase.co'
-    const targetUrl = `${baseUrl.replace(/\/$/, '')}/storage/v1/object/public/documents/${cleanPath}`
+    // Ambil URL valid asli (mengatasi penumpukan URL ganda)
+    if (targetUrl.includes('http')) {
+      const lastHttpIndex = targetUrl.lastIndexOf('http')
+      targetUrl = targetUrl.substring(lastHttpIndex)
+    }
 
+    // Ambil berkas langsung dari Supabase Storage
     const response = await fetch(targetUrl)
     if (!response.ok) {
       return new NextResponse('Gagal mengambil berkas dari server', { status: response.status })

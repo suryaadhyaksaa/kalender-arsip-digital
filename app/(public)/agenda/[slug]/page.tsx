@@ -44,15 +44,16 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
-function getCleanPublicUrl(filePath: string) {
-  if (!filePath) return ''
+function getCleanDownloadUrl(filePath: string) {
+  if (!filePath) return '#'
 
-  const cleanPath = filePath
-    .replace(/https?:\/\/[^\/]+\/storage\/v1\/object\/public\/documents\//g, '')
-    .replace(/^documents\//, '')
-    .replace(/^\/+/, '')
+  if (filePath.includes('http')) {
+    const lastHttpIndex = filePath.lastIndexOf('http')
+    return filePath.substring(lastHttpIndex)
+  }
 
   const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mqskoxyssqogjxdzqgkk.supabase.co'
+  const cleanPath = filePath.replace(/^\/+/, '')
   return `${baseUrl.replace(/\/$/, '')}/storage/v1/object/public/documents/${cleanPath}`
 }
 
@@ -154,8 +155,8 @@ export default async function AgendaDetailPage({ params }: Props) {
           {event.documents && event.documents.length > 0 ? (
             <div className="space-y-2">
               {event.documents.map((doc) => {
-                const targetPublicUrl = getCleanPublicUrl(doc.file_path)
-                const downloadProxyUrl = `/api/download?url=${encodeURIComponent(targetPublicUrl)}&name=${encodeURIComponent(doc.title)}`
+                const cleanPublicUrl = getCleanDownloadUrl(doc.file_path)
+                const downloadProxyUrl = `/api/download?url=${encodeURIComponent(cleanPublicUrl)}&name=${encodeURIComponent(doc.title)}`
 
                 return (
                   <div

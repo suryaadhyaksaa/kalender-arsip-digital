@@ -1,9 +1,19 @@
 @import "tailwindcss";
 
 @layer base {
-  /* Mencegah highlight biru saat elemen diketuk di layar Android/iOS */
+  /* Mencegah highlight biru & menghilangkan delay sentuh 300ms di HP */
   * {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body,
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
   }
 
   /* Mengunci ukuran font input minimal 16px di seluler agar iOS Safari tidak auto-zoom */
