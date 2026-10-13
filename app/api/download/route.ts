@@ -12,16 +12,15 @@ export async function GET(request: NextRequest) {
   try {
     let targetUrl = rawUrl
 
-    // Ambil URL valid asli (mengatasi penumpukan URL ganda)
+    // Ambil URL valid jika terdapat duplikasi http
     if (targetUrl.includes('http')) {
       const lastHttpIndex = targetUrl.lastIndexOf('http')
       targetUrl = targetUrl.substring(lastHttpIndex)
     }
 
-    // Ambil berkas langsung dari Supabase Storage
     const response = await fetch(targetUrl)
     if (!response.ok) {
-      return new NextResponse('Gagal mengambil berkas dari server', { status: response.status })
+      return new NextResponse('Gagal mengambil berkas dari storage', { status: response.status })
     }
 
     const blob = await response.blob()

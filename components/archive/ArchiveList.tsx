@@ -26,6 +26,7 @@ interface EventWithDocs {
   documents: DocumentItem[]
 }
 
+// Fungsi untuk mengekstrak URL publik yang bersih tanpa duplikasi prefix
 function getCleanDownloadUrl(filePath: string) {
   if (!filePath) return '#'
   
@@ -43,7 +44,6 @@ export default function ArchiveView({ events = [] }: { events?: EventWithDocs[] 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedType, setSelectedType] = useState('all')
 
-  // Proteksi array agar safe terhadap nilai undefined / null
   const safeEvents = Array.isArray(events) ? events : []
 
   const filteredEvents = safeEvents.filter((e) => {
@@ -137,6 +137,7 @@ export default function ArchiveView({ events = [] }: { events?: EventWithDocs[] 
 
                       <a
                         href={downloadProxyUrl}
+                        download
                         className="px-3 py-1.5 bg-[#FAF5EC] hover:bg-[#F0E6D8] border border-[#E0D2C0] text-[#022c22] rounded-lg text-xs font-extrabold flex items-center space-x-1.5 transition shrink-0 ml-2 shadow-2xs active:scale-95"
                       >
                         <Download className="w-3.5 h-3.5 text-emerald-800" />
