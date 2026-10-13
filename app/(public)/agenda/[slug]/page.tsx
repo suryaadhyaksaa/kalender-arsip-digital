@@ -45,6 +45,26 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
+// Fungsi pembantu untuk membersihkan & memastikan URL unduhan valid
+function getDownloadUrl(filePath: string) {
+  if (!filePath) return '#'
+  
+  // Jika path sudah berupa URL HTTP/HTTPS lengkap
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    // Tangani jika ada penumpukan string 'http' berganda
+    const lastHttpIndex = filePath.lastIndexOf('http')
+    if (lastHttpIndex > 0) {
+      return filePath.substring(lastHttpIndex)
+    }
+    return filePath
+  }
+
+  // Jika path berupa relative path
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const cleanPath = filePath.replace(/^documents\//, '')
+  return `${baseUrl}/storage/v1/object/public/documents/${cleanPath}`
+}
+
 export default async function AgendaDetailPage({ params }: Props) {
   const { slug } = await params
   const supabase = await createClient()
@@ -152,7 +172,7 @@ export default async function AgendaDetailPage({ params }: Props) {
           {event.documents && event.documents.length > 0 ? (
             <div className="space-y-2">
               {event.documents.map((doc) => {
-                const downloadUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/documents/${doc.file_path}`
+                const downloadUrl = getDownloadUrl(doc.file_path)
 
                 return (
                   <div
@@ -175,6 +195,7 @@ export default async function AgendaDetailPage({ params }: Props) {
                       href={downloadUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      download
                       className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition shrink-0 ml-2"
                     >
                       <Download className="w-3.5 h-3.5" />
